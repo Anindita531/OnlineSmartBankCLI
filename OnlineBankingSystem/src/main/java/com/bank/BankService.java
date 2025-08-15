@@ -37,6 +37,27 @@ public class BankService {
         }
     }
 
+   
+public void addInterest(int accountId, double ratePercent) {
+    final String sql = "UPDATE accounts SET balance = balance + (balance * ? / 100) WHERE account_id = ?";
+
+    try (Connection conn = DBConnection.getConnection();
+         PreparedStatement ps = conn.prepareStatement(sql)) {
+
+        ps.setDouble(1, ratePercent);
+        ps.setInt(2, accountId);
+
+        int rows = ps.executeUpdate();
+        if (rows > 0) {
+            System.out.println("Interest added successfully!");
+        } else {
+            System.out.println("Account not found!");
+        }
+    } catch (Exception e) {
+        e.printStackTrace();
+    }
+}
+    // View balance
     public void viewBalance(int accountId) {
         final String sql = "SELECT balance FROM accounts WHERE account_id = ?";
         try (Connection conn = DBConnection.getConnection();
@@ -52,101 +73,131 @@ public class BankService {
         } catch (Exception e) { e.printStackTrace(); }
     }
 
- public void deposit(int accountId, double amount) {
-    if (amount <= 0) {
-        System.out.println("Invalid deposit amount. Must be positive.");
-        return;
-    }
-
-    final String sql = "UPDATE accounts SET balance = balance + ? WHERE account_id = ?";
-    final String emailSql = "SELECT account_holder_name, email, balance FROM accounts WHERE account_id = ?";
-
-    try (Connection conn = DBConnection.getConnection();
-         PreparedStatement ps = conn.prepareStatement(sql);
-         PreparedStatement emailPs = conn.prepareStatement(emailSql)) {
-
-        ps.setDouble(1, amount);
-        ps.setInt(2, accountId);
-        int rows = ps.executeUpdate();
-
-        if (rows > 0) {
-            System.out.println("Deposited successfully!");
-
-            // Get email and balance
-            emailPs.setInt(1, accountId);
-            try (ResultSet rs = emailPs.executeQuery()) {
-                if (rs.next()) {
-                    String name = rs.getString("account_holder_name");
-                    String email = rs.getString("email");
-                    double balance = rs.getDouble("balance");
-
-                    String message = "Hello " + name + ",\n\n" +
-                                     "Deposit Successful!\n" +
-                                     "Amount: " + amount + "\n" +
-                                     "Current Balance: " + balance + "\n\n" +
-                                     "Regards,\nSecure Bank";
-
-                    EmailUtil.sendEmail(email, "Deposit Confirmation", message);
-                }
-            }
-        } else {
-            System.out.println("Account not found!");
+    // Deposit money
+    public void deposit(int accountId, double amount) {
+        if (amount <= 0) {
+            System.out.println("Invalid deposit amount. Must be positive.");
+            return;
         }
-    } catch (Exception e) { e.printStackTrace(); }
-}
 
-public void withdraw(int accountId, double amount) {
-    if (amount <= 0) {
-        System.out.println("Invalid withdrawal amount. Must be positive.");
-        return;
-    }
+        final String updateSql = "UPDATE accounts SET balance = balance + ? WHERE account_id = ?";
+        final String selectSql = "SELECT account_holder_name, email, balance FROM accounts WHERE account_id = ?";
 
-    final String getSql = "SELECT account_holder_name, email, balance FROM accounts WHERE account_id = ? FOR UPDATE";
-    final String updSql = "UPDATE accounts SET balance = balance - ? WHERE account_id = ?";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement updatePs = conn.prepareStatement(updateSql);
+             PreparedStatement selectPs = conn.prepareStatement(selectSql)) {
 
-    try (Connection conn = DBConnection.getConnection();
-         PreparedStatement getPs = conn.prepareStatement(getSql);
-         PreparedStatement updPs = conn.prepareStatement(updSql)) {
+            conn.setAutoCommit(false);
 
-        conn.setAutoCommit(false);
-
-        getPs.setInt(1, accountId);
-        try (ResultSet rs = getPs.executeQuery()) {
-            if (!rs.next()) {
+            // Update balance
+            updatePs.setDouble(1, amount);
+            updatePs.setInt(2, accountId);
+            int rows = updatePs.executeUpdate();
+            if (rows == 0) {
                 System.out.println("Account not found!");
                 conn.rollback();
                 return;
             }
 
-            double balance = rs.getDouble("balance");
-            if (balance < amount) {
-                System.out.println("Insufficient balance!");
-                conn.rollback();
-                return;
+            // Insert transaction
+            String txnSql = "INSERT INTO transactions (account_id, type, amount) VALUES (?, 'DEPOSIT', ?)";
+            try (PreparedStatement txnPs = conn.prepareStatement(txnSql)) {
+                txnPs.setInt(1, accountId);
+                txnPs.setDouble(2, amount);
+                txnPs.executeUpdate();
             }
 
-            String name = rs.getString("account_holder_name");
-            String email = rs.getString("email");
+            // Get email info
+            selectPs.setInt(1, accountId);
+            String name = "", email = "";
+            double balance = 0;
+            try (ResultSet rs = selectPs.executeQuery()) {
+                if (rs.next()) {
+                    name = rs.getString("account_holder_name");
+                    email = rs.getString("email");
+                    balance = rs.getDouble("balance");
+                }
+            }
 
-            updPs.setDouble(1, amount);
-            updPs.setInt(2, accountId);
-            updPs.executeUpdate();
+            conn.commit();
+            System.out.println("Deposited successfully!");
+
+            // Send email
+            String message = "Hello " + name + ",\n\n" +
+                    "Deposit Successful!\n" +
+                    "Amount: " + amount + "\n" +
+                    "Current Balance: " + balance + "\n\n" +
+                    "Regards,\nSecure Bank";
+
+            EmailUtil.sendEmail(email, "Deposit Confirmation", message);
+
+        } catch (Exception e) { e.printStackTrace(); }
+    }
+
+    // Withdraw money
+    public void withdraw(int accountId, double amount) {
+        if (amount <= 0) {
+            System.out.println("Invalid withdrawal amount. Must be positive.");
+            return;
+        }
+
+        final String selectSql = "SELECT account_holder_name, email, balance FROM accounts WHERE account_id = ? FOR UPDATE";
+        final String updateSql = "UPDATE accounts SET balance = balance - ? WHERE account_id = ?";
+
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement selectPs = conn.prepareStatement(selectSql);
+             PreparedStatement updatePs = conn.prepareStatement(updateSql)) {
+
+            conn.setAutoCommit(false);
+
+            selectPs.setInt(1, accountId);
+            String name = "", email = "";
+            double balance = 0;
+            try (ResultSet rs = selectPs.executeQuery()) {
+                if (!rs.next()) {
+                    System.out.println("Account not found!");
+                    conn.rollback();
+                    return;
+                }
+                balance = rs.getDouble("balance");
+                if (balance < amount) {
+                    System.out.println("Insufficient balance!");
+                    conn.rollback();
+                    return;
+                }
+                name = rs.getString("account_holder_name");
+                email = rs.getString("email");
+            }
+
+            // Update balance
+            updatePs.setDouble(1, amount);
+            updatePs.setInt(2, accountId);
+            updatePs.executeUpdate();
+
+            // Insert transaction
+            String txnSql = "INSERT INTO transactions (account_id, type, amount) VALUES (?, 'WITHDRAW', ?)";
+            try (PreparedStatement txnPs = conn.prepareStatement(txnSql)) {
+                txnPs.setInt(1, accountId);
+                txnPs.setDouble(2, amount);
+                txnPs.executeUpdate();
+            }
 
             conn.commit();
             System.out.println("Withdrawal successful!");
 
+            // Send email
             String message = "Hello " + name + ",\n\n" +
-                             "Withdrawal Successful!\n" +
-                             "Amount: " + amount + "\n" +
-                             "Current Balance: " + (balance - amount) + "\n\n" +
-                             "Regards,\nSecure Bank";
+                    "Withdrawal Successful!\n" +
+                    "Amount: " + amount + "\n" +
+                    "Current Balance: " + (balance - amount) + "\n\n" +
+                    "Regards,\nSecure Bank";
 
             EmailUtil.sendEmail(email, "Withdrawal Confirmation", message);
 
-        }
-    } catch (Exception e) { e.printStackTrace(); }
-}
+        } catch (Exception e) { e.printStackTrace(); }
+    }
 
+    // View transaction history
     public void viewTransactions(int accountId) {
         final String sql = "SELECT type, amount, transaction_date FROM transactions WHERE account_id = ? ORDER BY transaction_date DESC";
         try (Connection conn = DBConnection.getConnection();
@@ -159,12 +210,15 @@ public void withdraw(int accountId, double amount) {
                 while (rs.next()) {
                     any = true;
                     System.out.printf("%s: %.2f on %s%n",
-                        rs.getString("type"),
-                        rs.getDouble("amount"),
-                        rs.getTimestamp("transaction_date"));
+                            rs.getString("type"),
+                            rs.getDouble("amount"),
+                            rs.getTimestamp("transaction_date"));
                 }
                 if (!any) System.out.println("(No transactions yet)");
             }
         } catch (Exception e) { e.printStackTrace(); }
     }
+
+
+   
 }
