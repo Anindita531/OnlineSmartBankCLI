@@ -37,26 +37,64 @@ public class BankService {
         }
     }
 
-   
-public void addInterest(int accountId, double ratePercent) {
+   public void addInterest(int accountId, double rate) {
     final String sql = "UPDATE accounts SET balance = balance + (balance * ? / 100) WHERE account_id = ?";
+    final String selectSql = "SELECT account_holder_name, email, balance FROM accounts WHERE account_id = ?";
 
     try (Connection conn = DBConnection.getConnection();
-         PreparedStatement ps = conn.prepareStatement(sql)) {
+         PreparedStatement ps = conn.prepareStatement(sql);
+         PreparedStatement selectPs = conn.prepareStatement(selectSql);
+         PreparedStatement transPs = conn.prepareStatement(
+             "INSERT INTO transactions (account_id, type, amount) VALUES (?, 'INTEREST', ?)"
+         )) {
 
-        ps.setDouble(1, ratePercent);
-        ps.setInt(2, accountId);
+        // Get current balance and user info
+        selectPs.setInt(1, accountId);
+        try (ResultSet rs = selectPs.executeQuery()) {
+            if (!rs.next()) {
+                System.out.println("Account not found!");
+                return;
+            }
+            String name = rs.getString("account_holder_name");
+            String email = rs.getString("email");
+            double balance = rs.getDouble("balance");
 
-        int rows = ps.executeUpdate();
-        if (rows > 0) {
-            System.out.println("Interest added successfully!");
-        } else {
-            System.out.println("Account not found!");
+            // Calculate interest amount
+            double interestAmount = balance * rate / 100;
+
+            // Update balance
+            ps.setDouble(1, rate);
+            ps.setInt(2, accountId);
+            ps.executeUpdate();
+
+            // Insert transaction record
+            transPs.setInt(1, accountId);
+            transPs.setDouble(2, interestAmount);
+            transPs.executeUpdate();
+
+            System.out.println("Interest added successfully! Amount: " + interestAmount);
+
+            // Send email notification
+            String message = "Hello " + name + ",\n\n" +
+                             "Interest Added!\n" +
+                             "Rate: " + rate + "%\n" +
+                             "Interest Amount: " + interestAmount + "\n" +
+                             "Current Balance: " + (balance + interestAmount) + "\n\n" +
+                             "Regards,\nSecure Bank";
+
+            EmailUtil.sendEmail(email, "Interest Credited", message);
         }
+
     } catch (Exception e) {
-        e.printStackTrace();
+        if (e.getMessage() != null) {
+            System.err.println("Error adding interest: " + e.getMessage());
+        } else {
+            System.err.println("An error occurred while adding interest.");
+            
+        }
     }
 }
+
     // View balance
     public void viewBalance(int accountId) {
         final String sql = "SELECT balance FROM accounts WHERE account_id = ?";
@@ -216,7 +254,16 @@ public void addInterest(int accountId, double ratePercent) {
                 }
                 if (!any) System.out.println("(No transactions yet)");
             }
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) { 
+            
+            if (e.getMessage() != null ){
+                System.err.println("Error viewing transactions: " + e.getMessage());
+            } else {
+                e.printStackTrace(); 
+                System.out.println("An error occurred while viewing transactions.");
+            
+            }
+        }
     }
 
 
