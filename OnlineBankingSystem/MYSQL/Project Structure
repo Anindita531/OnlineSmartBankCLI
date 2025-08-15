@@ -1,0 +1,9 @@
+com.bank
+│
+├── Main.java            // Main application entry point
+├── BankService.java     // Customer banking operations
+├── AdminService.java    // Admin functionalities
+├── CustomerService.java // Customer account requests
+├── EmailUtil.java       // Email sending utility
+├── DBConnection.java    // Database connection
+└── BankServiceTest.java // Unit tests
