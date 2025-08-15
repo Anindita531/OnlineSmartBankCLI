@@ -52,14 +52,14 @@ Secure Online Banking System simulates real banking operations:
 
 ## ** Project Structure  **
 ## ** com.bank **
-│
-├── Main.java            // Main application entry point
-├── BankService.java     // Customer banking operations
-├── AdminService.java    // Admin functionalities
-├── CustomerService.java // Customer account requests
-├── EmailUtil.java       // Email sending utility
-├── DBConnection.java    // Database connection
-└── BankServiceTest.java // Unit tests
+## **│
+## **├── Main.java  **          // Main application entry point
+## **├── BankService.java  **   // Customer banking operations
+## **├── AdminService.java   ** // Admin functionalities
+## **├── CustomerService.java **// Customer account requests
+## **├── EmailUtil.java       **// Email sending utility
+## **├── DBConnection.java    **// Database connection
+## **└── BankServiceTest.java **// Unit tests
 
 ## **Setup Instructions **
 1. Database Configuration
